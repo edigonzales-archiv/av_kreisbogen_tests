@@ -1,0 +1,115 @@
+buildscript {
+    repositories {
+        maven { url "http://jars.interlis.ch" }
+        maven { url "http://download.osgeo.org/webdav/geotools/" }
+        jcenter()
+        mavenCentral()
+    }
+}
+
+plugins {
+    id "ch.so.agi.gretl" version "1.0.+"
+    id "de.undercouch.download" version "3.4.3"
+}
+
+import ch.so.agi.gretl.tasks.*
+import ch.so.agi.gretl.api.TransferSet
+
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.io.File
+
+def dbUriPub = 'jdbc:postgresql://192.168.50.8:5432/pub'
+def dbUserPub = 'ddluser'
+def dbPwdPub = 'ddluser'
+def dbSchemaArcs = 'av_arcs'
+def dbSchemaNoArcs = 'av_strokes'
+
+def pathToTempFolder = System.getProperty("java.io.tmpdir")
+def pathToUnzipFolder = Paths.get(pathToTempFolder, 'unzip_data')
+
+def baseUrl = "https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/SH/"
+def fosnrs = ["2901","2903","2904","2914","2915","2917","2919","2920","2931","2932","2933","2936","2937","2938","2939","2951","2952","2953","2961","2962","2963","2964","2971","2972","2973","2974"]
+
+// Download
+fosnrs.each { fosnr ->
+    def dataSet = fosnr.toString()
+    task "downloadITF_$dataSet"(type: Download) {
+        src baseUrl + dataSet + ".zip"
+        dest pathToTempFolder
+        overwrite true
+
+        doLast {
+            println "File downloaded to: " + pathToTempFolder
+        }        
+    }
+}
+
+task downloadITF() {
+    description = "Aggregationstask für Herunterladen sämtlicher ITF."
+    doLast {
+        println "All dynamic tasks were performed."
+    }
+}
+
+
+downloadITF.dependsOn {
+    tasks.findAll { task -> task.name.startsWith('downloadITF_') }
+}
+
+// Unzip
+fosnrs.each { fosnr ->
+    def dataSet = fosnr.toString()
+    task "unzipITF_$dataSet"(type: Copy, dependsOn: "downloadITF_$dataSet") {
+        from zipTree(Paths.get(pathToTempFolder, dataSet + ".zip"))
+        into file(pathToUnzipFolder)
+        include "**/*.itf"
+        rename { String fileName ->
+            if (fileName.contains(dataSet)) {
+                return dataSet+".itf"
+            }
+            return fileName
+        } 
+
+        doLast {
+            println "File unzipped to directory: " + pathToUnzipFolder
+        }        
+    }
+}
+
+task unzipITF() {
+    description = "Aggregationstask für Unzippen sämtlicher ITF."
+    doLast {
+        println "All dynamic tasks were performed."
+    }
+}
+
+unzipITF.dependsOn {
+    tasks.findAll { task -> task.name.startsWith('unzipITF_') }
+}
+
+// Import
+fosnrs.each { fosnr ->
+    def dataSet = fosnr.toString()
+    task "replaceITF_$dataSet"(type: Ili2pgReplace, dependsOn: "unzipITF_$dataSet") {
+        database = [dbUriPub, dbUserPub, dbPwdPub]
+        models = "DM01AVCH24LV95D"
+        dbschema = "av_arcs"
+        dataFile = file(Paths.get(pathToUnzipFolder.toString(), dataSet + ".itf"))
+        dataset = dataSet
+        disableValidation = true
+        logFile = dataSet+".log"
+        trace = true
+    }
+}
+
+task replaceITF() {
+    description = "Aggregationstask für Importieren/Ersetzen sämtlicher ITF."
+    doLast {
+        println "All dynamic tasks were performed."
+    }
+}
+
+replaceITF.dependsOn {
+    tasks.findAll { task -> task.name.startsWith('replaceITF_') }
+}
