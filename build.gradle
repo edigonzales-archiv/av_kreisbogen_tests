@@ -8,7 +8,7 @@ buildscript {
 }
 
 plugins {
-    id "ch.so.agi.gretl" version "1.0.+"
+    id "ch.so.agi.gretl" version "1.0.62"
     id "de.undercouch.download" version "3.4.3"
 }
 
@@ -88,13 +88,13 @@ unzipITF.dependsOn {
     tasks.findAll { task -> task.name.startsWith('unzipITF_') }
 }
 
-// Import
+// Import with arcs
 fosnrs.each { fosnr ->
     def dataSet = fosnr.toString()
     task "replaceITF_$dataSet"(type: Ili2pgReplace, dependsOn: "unzipITF_$dataSet") {
         database = [dbUriPub, dbUserPub, dbPwdPub]
         models = "DM01AVCH24LV95D"
-        dbschema = "av_arcs"
+        dbschema = dbSchemaArcs
         dataFile = file(Paths.get(pathToUnzipFolder.toString(), dataSet + ".itf"))
         dataset = dataSet
         disableValidation = true
@@ -112,4 +112,29 @@ task replaceITF() {
 
 replaceITF.dependsOn {
     tasks.findAll { task -> task.name.startsWith('replaceITF_') }
+}
+
+// Import with strokes
+fosnrs.each { fosnr ->
+    def dataSet = fosnr.toString()
+    task "replaceStrokeITF_$dataSet"(type: Ili2pgReplace, dependsOn: "unzipITF_$dataSet") {
+        database = [dbUriPub, dbUserPub, dbPwdPub]
+        models = "DM01AVCH24LV95D"
+        dbschema = dbSchemaNoArcs
+        dataFile = file(Paths.get(pathToUnzipFolder.toString(), dataSet + ".itf"))
+        dataset = dataSet
+        disableValidation = true
+        trace = false
+    }
+}
+
+task replaceStrokeITF() {
+    description = "Aggregationstask für Importieren/Ersetzen sämtlicher ITF (strokes)."
+    doLast {
+        println "All dynamic tasks were performed."
+    }
+}
+
+replaceStrokeITF.dependsOn {
+    tasks.findAll { task -> task.name.startsWith('replaceStrokeITF_') }
 }
